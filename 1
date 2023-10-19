@@ -1,0 +1,113 @@
+qsim <- function(mf, mb, a.rate, trb, trf, tmb, tmf, maxb) {
+  
+  nf <- numeric(7200)  # a vector to store the average queue length of French station
+  nb <- numeric(7200)  # a vector to store the average queue of British station
+  eq <- numeric(7200)  # a vector to store the average expected waiting time
+  
+  french_queues <- vector("list", mf)  # create five vectors to store the processing time required for cars queuing each station
+  f_lengths <- rep(0, mf)  # the length of the queue at each French station
+  f_waitingtime <- rep(0,mf) # the average waiting time for each French queue
+  
+  british_queues <- vector("list", mb) # create five vectors to store the processing time required for cars queuing each station
+  b_lengths <- rep(0, mb)  # the length of the queue at each British station
+  b_waitingtime <- rep(0,mb) # the average waiting time for each British queue
+  
+  for (i in 1:7200) {
+    
+    # simulate cars arrive at French station and joins the shortest french queue
+    if (runif(1) < a.rate && i <= 7200 - 1800) {
+      sq_length_f <- min(sapply(french_queues, length))
+      sq_f <- sample(which(sapply(french_queues, length) == sq_length_f),1)
+      french_queues[[sq_f]] <- append(french_queues[[sq_f]],runif(1, tmf, tmf + trf))
+    }
+    
+    
+    # simulate French station
+    for (j in 1:mf) {
+      if (!is.null(french_queues[[j]][1]) && !is.na(french_queues[[j]][1])) {
+      # if the first number in vector j (that is, the car in the station) is greater than 0, 
+      # then the queue cannot move forward at that second
+        if (french_queues[[j]][1] > 0) {
+        french_queues[[j]][1] <- french_queues[[j]][1] - 1
+      } else {
+        # if the first number in vector j (that is, the car in the station j ) is equal to 0, 
+        # then depending on the queues of British stations, the queue may move forward
+        if (sum(b_lengths) < mb*maxb) {
+          # car coming out from French station will automatically select the shortest queue to wait 
+          french_queues[[j]] <- french_queues[[j]][-1]
+          sq_length_b <- min(sapply(british_queues, length))
+          sq_b <- sample(which(sapply(british_queues, length) == sq_length_b),1)
+          british_queues[[sq_b]] <- append(british_queues[[sq_b]],runif(1, tmb, tmb + trb))
+        }
+      }
+        f_waitingtime[j] <- sum(french_queues[[j]])/length(french_queues[[j]])
+      } else {
+        f_waitingtime[j] <- 0
+      }
+      # calculate queue length
+      f_lengths[j] <- length(french_queues[[j]])-1
+      if (f_lengths[j] < 0) {f_lengths[j] <- 0}
+      }
+    
+    
+    # simulate British station, the steps are similar to those in French
+    for (k in 1:mb) {
+      if(!is.null(british_queues[[k]][1]) && !is.na(british_queues[[k]][1])) {
+       if ( british_queues[[k]][1] > 0 ) {
+        british_queues[[k]][1] <- british_queues[[k]][1] - 1
+      } else {
+        british_queues[[k]] <- british_queues[[k]][-1]
+      }
+      b_waitingtime[k] <- sum(british_queues[[k]])/length(british_queues[[k]])
+      } else {
+        b_waitingtime[k] <- 0
+      }
+      b_lengths[k] <- length(british_queues[[k]])-1
+      if (b_lengths[k] < 0) {b_lengths[k] <- 0}
+    }
+    
+    nf[i] <- mean(f_lengths)
+    nb[i] <- mean(b_lengths)
+    eq[i] <- mean(f_lengths * sum(f_waitingtime)/5 + b_lengths * sum(b_waitingtime)/5)
+  }
+  return(list(nf = nf, nb = nb, eq = eq)) 
+}
+
+# simulate the function using the original parameters
+default_result <- qsim(mf=5, mb=5, a.rate=0.1, trb=40, trf=40, tmb=30, tmf=30, maxb=20)
+
+# change 'tmb'
+modified_result <- qsim(mf=5, mb=5, a.rate=0.1, trb=40, trf=40, tmb=40, tmf=30, maxb=20)
+
+
+#Plotting the results
+par(mfrow = c(2, 2))
+#par(mar = c(4, 4, 2, 2))  
+
+#Plot the average queue length for the UK and France (default parameter)
+plot(1:length(default_result$nf),default_result$nf, type = "l", col = "red", ylim = range(c(default_result$nf, default_result$nb)),
+     ylab = "Queue Length", xlab = "Time (seconds)", main = "Default Parameters")
+lines(1:length(default_result$nf),default_result$nb, col = "blue")
+legend("topright", legend = c("French", "British"), fill = c("red", "blue"), cex = 0.4)
+#Plot the average wait time (default parameter)
+plot(default_result$eq, type = "l", col = "green", ylab = "Expected Waiting Time", 
+     xlab = "Time (seconds)", main = "Default Parameters")
+
+#Plot the average length of the UK and French queues (modified parameters)
+plot(1:length(modified_result$nf),modified_result$nf, type = "l", col = "red", ylim = range(c(modified_result$nf, modified_result$nb)),
+     ylab = "Queue Length", xlab = "Time (seconds)", main = "Modified Parameters")
+lines(1:length(modified_result$nf),modified_result$nb, col = "blue")
+legend("topright", legend = c("French", "British"), fill = c("red", "blue"), cex = 0.4)
+#Plot the average wait time (modified parameter)
+plot(modified_result$eq, type = "l", col = "green", ylab = "Expected Waiting Time", 
+     xlab = "Time (seconds)", main = "Modified Parameters")
+
+# define function: whether there is a car in line at the last second
+missed_ferry <- function() {
+  result <- qsim(mf=5, mb=5, a.rate=0.1, trb=40, trf=40, tmb=40, tmf=30, maxb=20)
+  return( result$nf[7200] >= 0.2 || result$nb[7200] >= 0.2 )
+}
+
+# estimate the probability of at least one car missing the ferry departure
+missed_prob <- mean(replicate(100, missed_ferry()))
+print(paste("Probability of missing the ferry:", missed_prob))  
